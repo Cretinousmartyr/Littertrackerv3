@@ -113,3 +113,341 @@
     function loadBoxes() {
       const saved = localStorage.getItem("litterBoxes");
       if (saved) {
+        boxes = JSON.parse(saved);
+      } else {
+        for (let i = 1; i <= 6; i++) {
+          boxes.push({
+            id: Date.now() + i,
+            name: "Litter Box " + i,
+            lastScooped: null,
+            lastCleaned: null,
+            history: []
+          });
+        }
+        saveBoxes();
+      }
+    }
+
+    function saveBoxes() {
+      localStorage.setItem("litterBoxes", JSON.stringify(boxes));
+    }
+
+    // Load notification settings from localStorage if available
+    function loadNotificationSettings() {
+      const saved = localStorage.getItem("notificationSettings");
+      if (saved) {
+        notificationSettings = JSON.parse(saved);
+      }
+    }
+
+    function saveNotificationSettings() {
+      localStorage.setItem("notificationSettings", JSON.stringify(notificationSettings));
+    }
+
+    // Utility: format a timestamp or return "Never"
+    function formatDate(timestamp) {
+      if (!timestamp) return "Never";
+      return new Date(timestamp).toLocaleString();
+    }
+
+    /************** Next Notification Time Calculations **************/
+    // For display purposes
+    function getNextScoopTime(box) {
+      if (!box.lastScooped) return "Due now";
+      const base = new Date(box.lastScooped).getTime() + notificationSettings.scoopInitialDelay * 1000;
+      let next = base;
+      const now = Date.now();
+      if (now <= next) return new Date(next).toLocaleString();
+      const interval = notificationSettings.scoopRepeatInterval * 1000;
+      const intervalsPassed = Math.ceil((now - base) / interval);
+      next = base + intervalsPassed * interval;
+      return new Date(next).toLocaleString();
+    }
+
+    function getNextCleanTime(box) {
+      if (!box.lastCleaned) return "Due now";
+      const base = new Date(box.lastCleaned).getTime() + notificationSettings.cleanInitialDelay * 1000;
+      let next = base;
+      const now = Date.now();
+      if (now <= next) return new Date(next).toLocaleString();
+      const interval = notificationSettings.cleanRepeatInterval * 1000;
+      const intervalsPassed = Math.ceil((now - base) / interval);
+      next = base + intervalsPassed * interval;
+      return new Date(next).toLocaleString();
+    }
+
+    // For scheduling, return the raw timestamp
+    function getNextScoopTimestamp(box) {
+      if (!box.lastScooped) return Date.now();
+      const base = new Date(box.lastScooped).getTime() + notificationSettings.scoopInitialDelay * 1000;
+      let next = base;
+      const now = Date.now();
+      if (now <= next) return next;
+      const interval = notificationSettings.scoopRepeatInterval * 1000;
+      const intervalsPassed = Math.ceil((now - base) / interval);
+      next = base + intervalsPassed * interval;
+      return next;
+    }
+
+    function getNextCleanTimestamp(box) {
+      if (!box.lastCleaned) return Date.now();
+      const base = new Date(box.lastCleaned).getTime() + notificationSettings.cleanInitialDelay * 1000;
+      let next = base;
+      const now = Date.now();
+      if (now <= next) return next;
+      const interval = notificationSettings.cleanRepeatInterval * 1000;
+      const intervalsPassed = Math.ceil((now - base) / interval);
+      next = base + intervalsPassed * interval;
+      return next;
+    }
+
+    /************** Notification Scheduling **************/
+    // Schedule notifications for all boxes
+    function scheduleNotifications() {
+      // Clear any previously scheduled timeouts
+      for (const key in notificationTimeouts) {
+        clearTimeout(notificationTimeouts[key]);
+      }
+      notificationTimeouts = {};
+
+      boxes.forEach(box => {
+        scheduleNotificationForBox(box, "scoop");
+        scheduleNotificationForBox(box, "clean");
+      });
+    }
+
+    // For a given box and type ("scoop" or "clean"), schedule a notification
+    function scheduleNotificationForBox(box, type) {
+      if (!("Notification" in window)) return;
+      if (Notification.permission !== "granted") return;
+
+      let nextTime;
+      if (type === "scoop") {
+        nextTime = getNextScoopTimestamp(box);
+      } else if (type === "clean") {
+        nextTime = getNextCleanTimestamp(box);
+      } else {
+        return;
+      }
+      const delay = Math.max(nextTime - Date.now(), 0);
+      const key = box.id + "-" + type;
+      notificationTimeouts[key] = setTimeout(() => {
+        showNotification(box, type);
+        // Reschedule after showing the notification.
+        scheduleNotificationForBox(box, type);
+      }, delay);
+    }
+
+    // Show the actual notification
+    function showNotification(box, type) {
+      let title, body;
+      if (type === "scoop") {
+        title = "Litter Box Scooping Reminder";
+        body = `It's time to scoop ${box.name}!`;
+      } else if (type === "clean") {
+        title = "Litter Box Cleaning Reminder";
+        body = `It's time to clean ${box.name}!`;
+      }
+      new Notification(title, { body: body });
+    }
+
+    // For testing: trigger an immediate notification
+    function testNotification() {
+      if (Notification.permission === "granted") {
+        new Notification("Test Notification", {
+          body: "This is a test notification for your Litter Box Tracker."
+        });
+      } else {
+        alert("Please allow notifications first.");
+      }
+    }
+
+    /************** UI Rendering **************/
+    function renderBoxes() {
+      const container = document.getElementById("boxesContainer");
+      container.innerHTML = "";
+      boxes.forEach((box, index) => {
+        const boxDiv = document.createElement("div");
+        boxDiv.className = "litter-box";
+
+        // Title with clickable rename
+        const title = document.createElement("h2");
+        title.textContent = box.name;
+        title.title = "Click to rename";
+        title.addEventListener("click", () => {
+          const newName = prompt("Enter new name:", box.name);
+          if (newName) {
+            box.name = newName;
+            saveBoxes();
+            renderBoxes();
+            scheduleNotifications();
+          }
+        });
+        boxDiv.appendChild(title);
+
+        // Display last event times
+        const scoopInfo = document.createElement("p");
+        scoopInfo.textContent = "Last Scooped: " + formatDate(box.lastScooped);
+        boxDiv.appendChild(scoopInfo);
+
+        const cleanInfo = document.createElement("p");
+        cleanInfo.textContent = "Last Cleaned: " + formatDate(box.lastCleaned);
+        boxDiv.appendChild(cleanInfo);
+
+        // Show computed next notification times
+        const nextScoop = document.createElement("p");
+        nextScoop.textContent = "Next Scoop Notification: " + getNextScoopTime(box);
+        boxDiv.appendChild(nextScoop);
+
+        const nextClean = document.createElement("p");
+        nextClean.textContent = "Next Clean Notification: " + getNextCleanTime(box);
+        boxDiv.appendChild(nextClean);
+
+        // Buttons: Scooped, Cleaned, Toggle History, Delete Box
+        const buttonsDiv = document.createElement("div");
+        buttonsDiv.className = "buttons";
+
+        const scoopBtn = document.createElement("button");
+        scoopBtn.textContent = "Scooped";
+        scoopBtn.addEventListener("click", () => {
+          const now = Date.now();
+          box.lastScooped = now;
+          box.history.push({ type: "scoop", time: now });
+          saveBoxes();
+          renderBoxes();
+          scheduleNotifications();
+        });
+        buttonsDiv.appendChild(scoopBtn);
+
+        const cleanBtn = document.createElement("button");
+        cleanBtn.textContent = "Cleaned";
+        cleanBtn.addEventListener("click", () => {
+          const now = Date.now();
+          box.lastCleaned = now;
+          box.lastScooped = now; // Deep cleaning counts as scooping.
+          box.history.push({ type: "clean", time: now });
+          saveBoxes();
+          renderBoxes();
+          scheduleNotifications();
+        });
+        buttonsDiv.appendChild(cleanBtn);
+
+        const historyBtn = document.createElement("button");
+        historyBtn.textContent = "Toggle History";
+        historyBtn.addEventListener("click", () => {
+          const histDiv = boxDiv.querySelector(".history");
+          if (histDiv) {
+            histDiv.style.display = histDiv.style.display === "none" ? "block" : "none";
+          }
+        });
+        buttonsDiv.appendChild(historyBtn);
+
+        const deleteBoxBtn = document.createElement("button");
+        deleteBoxBtn.textContent = "Delete Box";
+        deleteBoxBtn.addEventListener("click", () => {
+          if (confirm("Delete this litter box?")) {
+            boxes.splice(index, 1);
+            saveBoxes();
+            renderBoxes();
+            scheduleNotifications();
+          }
+        });
+        buttonsDiv.appendChild(deleteBoxBtn);
+
+        boxDiv.appendChild(buttonsDiv);
+
+        // History view (initially hidden)
+        const historyDiv = document.createElement("div");
+        historyDiv.className = "history";
+        historyDiv.style.display = "none";
+        if (box.history.length === 0) {
+          historyDiv.textContent = "No history yet.";
+        } else {
+          // Most recent first.
+          box.history.slice().reverse().forEach((entry) => {
+            const entryDiv = document.createElement("div");
+            entryDiv.textContent =
+              (entry.type === "scoop" ? "Scooped" : "Cleaned") +
+              " at " +
+              formatDate(entry.time);
+            // Button to delete history entry.
+            const delBtn = document.createElement("button");
+            delBtn.textContent = "Delete";
+            delBtn.style.marginLeft = "1em";
+            delBtn.addEventListener("click", () => {
+              const origIndex = box.history.findIndex(
+                (e) => e.time === entry.time && e.type === entry.type
+              );
+              if (origIndex > -1) {
+                box.history.splice(origIndex, 1);
+                // Recalculate lastScooped and lastCleaned
+                box.lastScooped = null;
+                box.lastCleaned = null;
+                box.history.forEach((ev) => {
+                  if (ev.type === "scoop") {
+                    if (!box.lastScooped || ev.time > box.lastScooped) {
+                      box.lastScooped = ev.time;
+                    }
+                  }
+                  if (ev.type === "clean") {
+                    if (!box.lastCleaned || ev.time > box.lastCleaned) {
+                      box.lastCleaned = ev.time;
+                    }
+                  }
+                });
+                saveBoxes();
+                renderBoxes();
+                scheduleNotifications();
+              }
+            });
+            entryDiv.appendChild(delBtn);
+            historyDiv.appendChild(entryDiv);
+          });
+        }
+        boxDiv.appendChild(historyDiv);
+        container.appendChild(boxDiv);
+      });
+    }
+
+    /************** Initialization **************/
+    // Load stored boxes and settings.
+    loadBoxes();
+    loadNotificationSettings();
+
+    // Update the Notification Settings panel inputs
+    document.getElementById("scoopInitialDelay").value = notificationSettings.scoopInitialDelay;
+    document.getElementById("scoopRepeatInterval").value = notificationSettings.scoopRepeatInterval;
+    document.getElementById("cleanInitialDelay").value = notificationSettings.cleanInitialDelay;
+    document.getElementById("cleanRepeatInterval").value = notificationSettings.cleanRepeatInterval;
+
+    renderBoxes();
+
+    // Request Notification permission and schedule notifications if granted.
+    if ("Notification" in window) {
+      if (Notification.permission !== "granted") {
+        Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+            scheduleNotifications();
+          }
+        });
+      } else {
+        scheduleNotifications();
+      }
+    }
+
+    // Save settings button event listener
+    document.getElementById("saveSettings").addEventListener("click", () => {
+      notificationSettings.scoopInitialDelay = parseInt(document.getElementById("scoopInitialDelay").value) || 172800;
+      notificationSettings.scoopRepeatInterval = parseInt(document.getElementById("scoopRepeatInterval").value) || 28800;
+      notificationSettings.cleanInitialDelay = parseInt(document.getElementById("cleanInitialDelay").value) || 1814400;
+      notificationSettings.cleanRepeatInterval = parseInt(document.getElementById("cleanRepeatInterval").value) || 86400;
+      saveNotificationSettings();
+      scheduleNotifications();
+      alert("Notification settings saved.");
+    });
+
+    // Test notification button event listener
+    document.getElementById("testNotification").addEventListener("click", testNotification);
+  </script>
+</body>
+</html>
