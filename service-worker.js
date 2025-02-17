@@ -1,14 +1,14 @@
-self.addEventListener("install", function (event) {
+self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open("litter-box-cache").then(function (cache) {
+    caches.open("litter-box-cache").then(cache => {
       return cache.addAll(["./index.html", "./manifest.json"]);
     })
   );
 });
 
-self.addEventListener("fetch", function (event) {
+self.addEventListener("fetch", event => {
   event.respondWith(
-    caches.match(event.request).then(function (response) {
+    caches.match(event.request).then(response => {
       return response || fetch(event.request);
     })
   );
