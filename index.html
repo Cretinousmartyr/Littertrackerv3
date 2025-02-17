@@ -184,3 +184,115 @@
             saveBoxes();
             renderBoxes();
           }
+        });
+        btnDiv.appendChild(deleteBoxBtn);
+
+        boxDiv.appendChild(btnDiv);
+
+        // History display
+        const historyDiv = document.createElement('div');
+        historyDiv.className = 'history';
+        historyDiv.style.display = 'none';
+        if (box.history.length === 0) {
+          historyDiv.textContent = "No history.";
+        } else {
+          // Display history (most recent first)
+          box.history.slice().reverse().forEach(entry => {
+            const entryP = document.createElement('p');
+            entryP.textContent =
+              (entry.type === 'scoop' ? "Scooped" : "Cleaned") +
+              " at " + formatTimestamp(entry.time);
+            // Delete history entry button
+            const delEntryBtn = document.createElement('button');
+            delEntryBtn.textContent = "Delete";
+            delEntryBtn.style.marginLeft = '0.5em';
+            delEntryBtn.addEventListener('click', () => {
+              const idx = box.history.findIndex(e => e.time === entry.time && e.type === entry.type);
+              if (idx > -1) {
+                box.history.splice(idx, 1);
+                // Recalculate lastScooped and lastCleaned based on remaining history
+                box.lastScooped = null;
+                box.lastCleaned = null;
+                box.history.forEach(e => {
+                  if (e.type === 'scoop') {
+                    if (!box.lastScooped || e.time > box.lastScooped) {
+                      box.lastScooped = e.time;
+                    }
+                  }
+                  if (e.type === 'clean') {
+                    if (!box.lastCleaned || e.time > box.lastCleaned) {
+                      box.lastCleaned = e.time;
+                    }
+                  }
+                });
+                saveBoxes();
+                renderBoxes();
+              }
+            });
+            entryP.appendChild(delEntryBtn);
+            historyDiv.appendChild(entryP);
+          });
+        }
+        boxDiv.appendChild(historyDiv);
+
+        container.appendChild(boxDiv);
+      });
+    }
+
+    /***** Notifications *****/
+    // Enable notifications: request permission when button is clicked.
+    document.getElementById('enableNotifications').addEventListener('click', () => {
+      if ('Notification' in window) {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            alert("Notifications enabled!");
+          } else {
+            alert("Notifications not enabled.");
+          }
+        });
+      } else {
+        alert("Your browser does not support notifications.");
+      }
+    });
+
+    // Test notification: send a test notification if permission is granted.
+    document.getElementById('testNotification').addEventListener('click', () => {
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          try {
+            new Notification("Test Notification", {
+              body: "This is a test notification from Litter Box Tracker."
+            });
+          } catch (error) {
+            alert("Error displaying notification: " + error);
+          }
+        } else {
+          alert("Please enable notifications first.");
+        }
+      } else {
+        alert("Your browser does not support notifications.");
+      }
+    });
+
+    // Add a new litter box when the button is clicked.
+    document.getElementById('addBox').addEventListener('click', () => {
+      const name = prompt("Enter name for new litter box:", "New Litter Box");
+      if (name) {
+        boxes.push({
+          id: Date.now() + Math.floor(Math.random() * 1000),
+          name: name,
+          lastScooped: null,
+          lastCleaned: null,
+          history: []
+        });
+        saveBoxes();
+        renderBoxes();
+      }
+    });
+
+    /***** Initialization *****/
+    loadBoxes();
+    renderBoxes();
+  </script>
+</body>
+</html>
